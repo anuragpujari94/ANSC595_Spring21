@@ -1,0 +1,59 @@
+#create a manifest file
+$ ls -1 "$PWD/"*.2*
+
+ssh <name>@bell.rcac.purdue.edu
+$ module load bioinfo
+$ module load Qiime/2-2020.11
+
+
+echo "Start time"
+date +"%d %B %Y %H:%M:%S"
+
+qiime tools import --type 'SampleData[SequencesWithQuality]' --input-path Manifest.txt --output-path qiimeimport.qza --input-format SingleEndFastqManifestPhred33V2
+
+
+#Demux step
+
+qiime demux emp-single --i-seqs emp-single-end-sequences.qza --m-barcodes-file Metadata.tsv --m-barcodes-column barcode-sequence --o-per-sample-sequences demux.qza --o-error-correction-details demux-details.qza
+
+echo'Demux Done!'
+
+#Summarize Demux
+
+qiime demux summarize --i-data demux.qza --o-visualization demux.qzv
+
+#DADA2 
+
+qiime dada2 denoise-single --i-demultiplexed-seqs demux.qza --p-trim-left 0 --p-trunc-len 254 --o-representative-sequences rep-seqs-dada2.qza --o-table table-dada2.qza --o-denoising-stats stats-dada2.qza
+
+qiime metadata tabulate --m-input-file stats-dada2.qza --o-visualization stats-dada2.qzv
+
+mv rep-seqs-dada2.qza rep-seqs.qza
+mv table-dada2.qza table.qza
+
+#featureTable
+qiime feature-table summarize --i-table table.qza --o-visualization table.qzv --m-Metadata-file Metadata.tsv
+qiime feature-table tabulate-seqs --i-data rep-seqs.qza --o-visualization rep-seqs.qzv
+
+#Tree_for_phylogenetic_analysis
+qiime phylogeny align-to-tree-mafft-fasttree --i-sequences rep-seqs.qza --o-alignment aligned-rep-seqs.qza --o-masked-alignment masked-aligned-rep-seqs.qza --o-tree unrooted-tree.qza --o-rooted-tree rooted-tree.qza
+
+#Alpha_and_Beta_Diversity
+qiime diversity core-metrics-phylogenetic --i-phylogeny rooted-tree.qza --i-table table.qza --p-sampling-depth 2040 --m-metadata-file Metadata.tsv --output-dir core-metrics-results
+
+#Alpha_rarefaction_plotting
+qiime diversity alpha-rarefaction --i-table table.qza --i-phylogeny rooted-tree.qza --p-max-depth 4000 --m-metadata-file Metadata.tsv --o-visualization alpha-rarefaction.qzv
+
+#Taxonomic_analysis
+qiime feature-classifier classify-sklearn --i-classifier gg-13-8-99-515-806-nb-classifier.qza --i-reads rep-seqs.qza --o-classification taxonomy.qza
+
+qiime metadata tabulate --m-input-file taxonomy.qza --o-visualization taxonomy.qzv
+
+qiime taxa barplot --i-table table.qza --i-taxonomy taxonomy.qza  --m-metadata-file Metadata.tsv --o-visualization taxa-bar-plots.qzv
+
+#ANCOM
+qiime feature-table filter-samples --i-table table.qza --m-metadata-file Metadata.tsv --p-where ""--o-filtered-table Deliverymodetable.qza
+
+qiime composition add-pseudocount --i-table Deliverymodetable.qza --o-composition-table comp-deliverymode-table.qza
+qiime composition ancom --i-table comp-deliverymode-table.qza --m-metadata-file Metadata.tsv --m-metadata-column deliverymode --o-visualization ancom-subject.qzv
+
